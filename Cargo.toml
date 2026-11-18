@@ -20,7 +20,7 @@ rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 ssh-key = { version = "0.6.7", features = ["encryption", "ed25519", "rsa", "getrandom"] }
 suppaftp = { version = "6.3", default-features = false }
