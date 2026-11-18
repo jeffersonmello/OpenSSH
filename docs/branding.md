@@ -11,6 +11,7 @@ O OpenSSH Manager usa uma identidade própria para um workspace de infraestrutur
 | `assets/brand/logo.png` | Logo principal e origem do ícone macOS |
 | `assets/brand/banner.png` | Capa do README e apresentação do projeto |
 | `docs/images/app-preview.png` | Captura real da interface em demonstração |
+| `docs/images/keys-preview.png` | Captura real do editor de chaves com metadados fictícios |
 
 Logo e banner são raster gerados pela ferramenta nativa `image_gen`, em modo built-in. Os [prompts finais e o registro de inspeção](../assets/brand/prompts.md) estão versionados com os assets. O logo tem 1254 × 1254 px e o banner 2098 × 749 px. A screenshot de 1440 × 920 px é uma captura real do aplicativo em modo demo, não uma imagem gerada.
 

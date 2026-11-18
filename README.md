@@ -32,8 +32,8 @@ A captura usa o modo de demonstração. Endereços `example.com` e informações
 | --- | --- | --- |
 | Hosts | Cadastro, edição, grupos, tags, favoritos e busca local | Importação de `~/.ssh/config`, operações em lote |
 | Terminal SSH | Sessão integrada por PTY usando o cliente SSH do sistema | Seleção avançada, busca, maior compatibilidade de terminal |
-| Identidades | Importação e geração de Ed25519; metadados e fingerprint | Passphrases na geração, certificados e integração com hardware |
-| Senhas | Armazenamento no Keychain do macOS para transferências | Fluxos unificados de autenticação |
+| Identidades | Editor lateral; importação por arquivo/texto; Ed25519 com passphrase opcional; chave pública e fingerprint derivados; vínculos com vários hosts | Certificados e integração com hardware |
+| Senhas e passphrases | Senha por host e passphrase opcional por identidade no Keychain para SFTP | Fluxos unificados de autenticação |
 | Túneis | SOCKS5, encaminhamento local e remoto via SSH | Monitoramento, reconexão e dependências entre túneis |
 | Arquivos | Listagem, upload e download de arquivos via SFTP e FTP | Fila com progresso, cancelamento e operações recursivas |
 | Snippets | Cadastro, edição e cópia de comandos; execução manual | Organização e integração com sessões |
@@ -43,7 +43,7 @@ A captura usa o modo de demonstração. Endereços `example.com` e informações
 
 FTP comum transmite credenciais e arquivos sem criptografia. Seu uso exige confirmação explícita no aplicativo. Prefira SFTP sempre que possível. FTPS ainda não é oferecido.
 
-A alpha não oferece sincronização em nuvem, colaboração, Touch ID, FIDO2, reconexão automática ou equivalência completa com terminais maduros. A importação aceita chaves sem passphrase; para usar chaves protegidas, carregue-as no `ssh-agent` e selecione autenticação pelo agente. Chaves privadas ficam em arquivos locais com permissão `0600`; **não** são armazenadas no Keychain. Os metadados do workspace não são criptografados.
+A alpha não oferece sincronização em nuvem, colaboração, Touch ID, FIDO2, reconexão automática ou equivalência completa com terminais maduros. O editor aceita chaves OpenSSH protegidas mediante passphrase correta. A passphrase pode ser salva no Keychain para SFTP; terminal SSH e túneis continuam pedindo-a interativamente. Chaves privadas ficam em arquivos locais com permissão `0600`; **não** são armazenadas no Keychain. Os metadados do workspace não são criptografados.
 
 ## Executar no macOS
 
@@ -70,7 +70,7 @@ O modo de demonstração usa um workspace em memória e bloqueia conexões de re
 ### Primeira conexão
 
 1. Cadastre nome, endereço, usuário e porta de um host de teste.
-2. Escolha uma identidade importada ou gerada, ou use seu `ssh-agent`.
+2. Em **Chaves**, importe uma chave por arquivo ou texto, ou gere Ed25519 com passphrase opcional. Confira o fingerprint e selecione os hosts SSH/SFTP que usarão essa identidade. Também é possível escolher a chave no editor de cada conexão, ou usar seu `ssh-agent`.
 3. Abra o terminal SSH. Na primeira conexão, confira o fingerprint do servidor por um canal confiável antes de aceitar a chave.
 4. Para SFTP, abra **Arquivos → Verificar servidor via SSH** e valide o fingerprint no terminal. A transferência rejeita chaves desconhecidas ou alteradas.
 5. Cadastre um túnel e inicie a sessão correspondente. SOCKS usa um listener local; configure seu cliente para SOCKS5 em `127.0.0.1:<porta>` e resolução DNS pelo proxy, quando suportado.
@@ -79,7 +79,23 @@ Conexões gerenciadas ignoram `~/.ssh/config` (`-F /dev/null`), preservando `kno
 
 Senhas solicitadas pelo terminal são digitadas na própria sessão; a senha salva para transferências não é injetada no cliente SSH. Nunca cole chaves privadas em issues, screenshots ou arquivos do repositório.
 
+Uma identidade pode ser compartilhada por vários hosts. Renomeá-la ou substituir seu material mantém os vínculos; a substituição afeta as próximas autenticações de todos eles. Desmarcar um host remove apenas sua associação. Hosts FTP não usam identidades SSH.
+
 Excluir uma identidade remove seu cadastro e vínculos, preservando o arquivo privado no disco. Senhas salvas podem ser removidas pelo botão **Esquecer senha salva** no editor do host; excluir o cadastro do host não apaga automaticamente sua entrada do Keychain.
+
+### Gerenciar chaves e conexões
+
+![Editor de chaves e conexões vinculadas em demonstração](docs/images/keys-preview.png)
+
+Abra **Chaves** para ver as identidades em cartões e selecione uma para abrir o editor lateral. Cadastre uma chave por arquivo ou cole o material privado no campo mascarado. Na geração Ed25519, uma passphrase opcional protege o arquivo criado. Para importar OpenSSH protegido, informe a passphrase; chave pública e fingerprint são derivados do material validado e ficam disponíveis para conferência.
+
+Ao editar uma identidade existente, o conteúdo salvo permanece oculto. Use **Substituir chave privada...** para fornecer outro material; o campo vazio mantém a chave atual. Alterar somente o nome preserva o material e os vínculos. Para trocar a chave, forneça o novo material e sua passphrase quando necessária: o ID continua o mesmo e as conexões associadas passam a usar a nova chave nas próximas autenticações.
+
+No editor da identidade, selecione os hosts SSH/SFTP que devem usá-la. Cada host aceita uma identidade; ao selecionar um que já usa outra, confira a indicação de substituição antes de salvar. Desmarcar uma conexão desfaz apenas essa associação. O editor do próprio host também oferece seleção por nome, algoritmo e fingerprint, com acesso ao gerenciamento de chaves.
+
+Na identidade existente, expanda **Passphrase e autenticação SFTP** para guardar ou esquecer a passphrase. Informar apenas a passphrase valida a chave já salva antes de atualizar o Keychain; editar somente nome ou vínculos preserva a credencial existente. Ao substituir o material sem guardar uma nova passphrase, a credencial antiga é removida depois de salvar o cadastro.
+
+A opção de guardar passphrase no Keychain vale para o SFTP. Terminal SSH e túneis continuam usando os prompts do cliente SSH e seu `ssh-agent`. O cadastro não oferece certificados, Touch ID ou FIDO2 nesta versão. A importação aceita arquivos de até 1 MiB; chaves protegidas precisam estar no formato OpenSSH e têm limite de 1024 rodadas bcrypt. PEM legado sem proteção continua compatível quando aceito pelo `ssh-keygen` do sistema.
 
 ### Gerar um aplicativo `.app`
 
@@ -107,7 +123,9 @@ O script executa formatação, Clippy e testes com `Cargo.lock`. Testes de rede,
 
 ```text
 src/
-  app.rs          interface e coordenação das tarefas
+  app.rs          navegação e coordenação das tarefas
+  app/keys.rs     grade, editor lateral e persistência de identidades
+  app/keys/tests.rs  testes de máscara, clipboard e histórico do editor
   models.rs       entidades e schema do workspace
   storage.rs      persistência local
   vault.rs        identidades e Keychain
@@ -128,6 +146,7 @@ docs/             arquitetura, decisões, segurança e operação
 - [Testes e validação manual](docs/testing.md)
 - [Modelo de segurança](docs/security.md) e [reporte de vulnerabilidades](SECURITY.md)
 - [Especificação inicial](specs/001-native-workspace/spec.md), [plano](specs/001-native-workspace/plan.md) e [tarefas](specs/001-native-workspace/tasks.md)
+- [Editor de chaves e vínculos](specs/002-key-workspace/spec.md), [plano](specs/002-key-workspace/plan.md) e [validação](specs/002-key-workspace/tasks.md)
 - [Roadmap](docs/roadmap.md) e [histórico](CHANGELOG.md)
 - [Identidade visual](docs/branding.md)
 

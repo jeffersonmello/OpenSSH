@@ -1,3 +1,5 @@
+mod keys;
+
 use eframe::egui::{self, Align, Color32, FontId, RichText, Stroke, Vec2};
 use openssh_manager::{
     models::*,
@@ -48,14 +50,20 @@ enum Icon {
     Star,
 }
 enum AppEvent {
-    Identity(Result<Identity, String>),
+    Identity {
+        result: Result<Identity, String>,
+        previous_id: Option<String>,
+        linked_hosts: Vec<String>,
+        passphrase_action: keys::PassphraseAction,
+    },
+    IdentityCredential(Result<(), String>),
     Transfer {
         host: Host,
         path: String,
         listing: bool,
         result: Result<Vec<RemoteEntry>, String>,
     },
-    Credential(Result<(), String>),
+    Credential(Result<(), String>, &'static str),
 }
 struct SessionTab {
     id: String,
@@ -79,7 +87,7 @@ pub struct OpenSshApp {
     host_tags: String,
     host_editor_id: String,
     tunnel_editor: Option<Tunnel>,
-    key_name: String,
+    key_draft: Option<keys::KeyDraft>,
     snippet_editor: Option<Snippet>,
     notice: Option<(String, bool)>,
     sender: Sender<AppEvent>,
@@ -109,6 +117,17 @@ impl OpenSshApp {
         style.visuals.extreme_bg_color = BG;
         style.visuals.faint_bg_color = CARD;
         style.visuals.override_text_color = Some(TEXT);
+        style.visuals.window_corner_radius = egui::CornerRadius::same(20);
+        style.visuals.menu_corner_radius = egui::CornerRadius::same(12);
+        for visuals in [
+            &mut style.visuals.widgets.noninteractive,
+            &mut style.visuals.widgets.inactive,
+            &mut style.visuals.widgets.hovered,
+            &mut style.visuals.widgets.active,
+            &mut style.visuals.widgets.open,
+        ] {
+            visuals.corner_radius = egui::CornerRadius::same(12);
+        }
         style.visuals.selection.bg_fill = Color32::from_rgb(37, 80, 72);
         style.visuals.selection.stroke = Stroke::new(1.0_f32, MINT);
         style.visuals.widgets.inactive.bg_fill = CARD;
@@ -162,6 +181,10 @@ impl OpenSshApp {
         };
         let selected = workspace.hosts.first().map(|host| host.id.clone());
         let file_host = selected.clone().unwrap_or_default();
+        let key_draft = workspace
+            .identities
+            .first()
+            .map(|identity| keys::KeyDraft::existing(identity, &workspace));
         Self {
             workspace,
             storage,
@@ -177,7 +200,7 @@ impl OpenSshApp {
             host_tags: String::new(),
             host_editor_id: String::new(),
             tunnel_editor: None,
-            key_name: "Minha chave".into(),
+            key_draft,
             snippet_editor: None,
             notice,
             sender,
@@ -195,6 +218,16 @@ impl OpenSshApp {
             screenshot,
             started: Instant::now(),
             screenshot_requested: false,
+        }
+    }
+
+    pub fn set_demo_page(&mut self, name: &str) {
+        if self.demo {
+            self.page = if name == "keys" {
+                Page::Keys
+            } else {
+                Page::Hosts
+            };
         }
     }
 
@@ -222,18 +255,39 @@ impl OpenSshApp {
     fn poll(&mut self) {
         while let Ok(event) = self.receiver.try_recv() {
             match event {
-                AppEvent::Identity(result) => {
+                AppEvent::Identity {
+                    result,
+                    previous_id,
+                    linked_hosts,
+                    passphrase_action,
+                } => {
                     self.busy = false;
                     match result {
-                        Ok(identity) => {
-                            self.workspace.identities.push(identity);
-                            if self.persist() {
-                                self.notice =
-                                    Some(("Chave adicionada ao cofre local.".into(), false));
+                        Ok(mut identity) => {
+                            if let Some(id) = previous_id {
+                                if !self.workspace.identities.iter().any(|saved| saved.id == id) {
+                                    self.notice = Some(("A identidade foi removida durante a validação. Nenhum vínculo foi aplicado.".into(), true));
+                                    continue;
+                                }
+                                identity.id = id;
+                            }
+                            let id = identity.id.clone();
+                            if self.commit_identity(identity, &linked_hosts, None) {
+                                self.apply_passphrase_action(id, passphrase_action);
                             }
                         }
                         Err(error) => self.notice = Some((error, true)),
                     }
+                }
+                AppEvent::IdentityCredential(result) => {
+                    self.busy = false;
+                    self.notice = Some(match result {
+                        Ok(()) => (
+                            "Identidade e vínculos salvos. Chaves do macOS atualizado.".into(),
+                            false,
+                        ),
+                        Err(error) => (error, true),
+                    });
                 }
                 AppEvent::Transfer {
                     host,
@@ -264,9 +318,9 @@ impl OpenSshApp {
                         Err(error) => self.notice = Some((error, true)),
                     }
                 }
-                AppEvent::Credential(result) => {
+                AppEvent::Credential(result, message) => {
                     self.notice = Some(match result {
-                        Ok(()) => ("Senha salva no Chaves do macOS.".into(), false),
+                        Ok(()) => (message.into(), false),
                         Err(error) => (error, true),
                     })
                 }
@@ -347,7 +401,7 @@ impl OpenSshApp {
                 ui.add_space(gap);
                 egui::Frame::new()
                     .fill(CARD)
-                    .corner_radius(10)
+                    .corner_radius(14)
                     .inner_margin(12.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -530,7 +584,7 @@ impl OpenSshApp {
                                 LINE
                             },
                         ))
-                        .corner_radius(12)
+                        .corner_radius(18)
                         .inner_margin(16.0)
                         .show(&mut uis[index % columns], |ui| {
                             ui.set_min_width(ui.available_width());
@@ -618,7 +672,7 @@ impl OpenSshApp {
                                         LINE
                                     },
                                 ))
-                                .corner_radius(12)
+                                .corner_radius(18)
                                 .inner_margin(17.0)
                                 .show(&mut uis[index], |ui| {
                                     ui.set_min_width(ui.available_width());
@@ -698,7 +752,7 @@ impl OpenSshApp {
                 egui::Frame::new()
                     .fill(Color32::from_rgb(18, 31, 37))
                     .stroke(Stroke::new(1.0_f32, LINE))
-                    .corner_radius(12)
+                    .corner_radius(18)
                     .inner_margin(18.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -776,6 +830,14 @@ impl OpenSshApp {
                         .map(|identity| identity.name.as_str())
                         .unwrap_or("SSH Agent / interativa"),
                 );
+                if let Some(identity) = identity {
+                    pill(ui, identity.algorithm_label(), MINT);
+                    if ui.small_button("Ver chave e vínculos").clicked() {
+                        self.key_draft = Some(keys::KeyDraft::existing(identity, &self.workspace));
+                        self.query.clear();
+                        self.page = Page::Keys;
+                    }
+                }
                 ui.add_space(2.0);
                 ui.horizontal_wrapped(|ui| {
                     for tag in &host.tags {
@@ -871,112 +933,6 @@ impl OpenSshApp {
         }
     }
 
-    fn keys(&mut self, ui: &mut egui::Ui) {
-        self.header(
-            ui,
-            "As chaves da sua infraestrutura.",
-            "Identidades locais para autenticar suas conexões SSH e SFTP.",
-        );
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [240.0, 36.0],
-                egui::TextEdit::singleline(&mut self.key_name).hint_text("Nome da identidade"),
-            );
-            if ui
-                .add_enabled(
-                    !self.busy && !self.demo && self.writable,
-                    egui::Button::new("+  Gerar Ed25519")
-                        .fill(MINT)
-                        .stroke(Stroke::NONE),
-                )
-                .clicked()
-            {
-                self.key_job(None);
-            }
-            if ui
-                .add_enabled(
-                    !self.busy && !self.demo && self.writable,
-                    egui::Button::new("Importar chave..."),
-                )
-                .clicked()
-            {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_title("Escolher chave privada SSH")
-                    .pick_file()
-                {
-                    self.key_job(Some(path));
-                }
-            }
-        });
-        ui.add_space(16.0);
-        ui.label(RichText::new("As chaves privadas ficam em arquivos locais com permissão 0600. As chaves geradas nesta versão não têm passphrase.").size(12.0).color(AMBER));
-        ui.add_space(24.0);
-        if self.workspace.identities.is_empty() {
-            empty_state(ui, Icon::Key, "Uma identidade. Muitas conexões.", "Gere uma chave Ed25519 ou importe uma chave privada existente. Nunca compartilhe sua chave privada.");
-        }
-        for identity in self.workspace.identities.clone() {
-            egui::Frame::new()
-                .fill(CARD)
-                .stroke(Stroke::new(1.0_f32, LINE))
-                .corner_radius(12)
-                .inner_margin(18.0)
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        icon_tile(ui, Icon::Key, MINT, 40.0);
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(&identity.name).strong());
-                            ui.label(RichText::new(&identity.algorithm).color(MUTED).size(11.0));
-                        });
-                        ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                            if ui.button("Remover referência").clicked() {
-                                self.confirm_delete =
-                                    Some(("identity".into(), identity.id.clone()));
-                            }
-                            if ui.button("Copiar chave pública").clicked() {
-                                ui.ctx().copy_text(identity.public_key.clone());
-                                self.notice = Some(("Chave pública copiada.".into(), false));
-                            }
-                        });
-                    });
-                    ui.add_space(12.0);
-                    ui.label(
-                        RichText::new(&identity.fingerprint)
-                            .monospace()
-                            .size(12.0)
-                            .color(MUTED),
-                    );
-                    ui.label(RichText::new(&identity.path).size(11.0).color(MUTED));
-                });
-            ui.add_space(12.0);
-        }
-    }
-
-    fn key_job(&mut self, source: Option<PathBuf>) {
-        let Some(storage) = self.storage.as_ref() else {
-            return;
-        };
-        let keys_dir = storage.keys_dir.clone();
-        let data_dir = storage.data_dir.clone();
-        let name = self.key_name.trim().to_string();
-        if name.is_empty() {
-            self.notice = Some(("Informe um nome para a identidade.".into(), true));
-            return;
-        }
-        self.busy = true;
-        let sender = self.sender.clone();
-        std::thread::spawn(move || {
-            let storage = Storage { data_dir, keys_dir };
-            let result = match source {
-                Some(source) => vault::import_key(&storage, &name, &source),
-                None => vault::generate_key(&storage, &name),
-            };
-            let _ =
-                sender.send(AppEvent::Identity(result.map_err(|error| {
-                    format!("Não foi possível adicionar a chave: {error}")
-                })));
-        });
-    }
-
     fn tunnels(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -1013,7 +969,7 @@ impl OpenSshApp {
             let running = self.sessions.iter_mut().position(|session| {
                 session.tunnel_id.as_ref() == Some(&tunnel.id) && !session.session.is_finished()
             });
-            egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0_f32, LINE)).corner_radius(12).inner_margin(20.0).show(ui, |ui| {
+            egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0_f32, LINE)).corner_radius(18).inner_margin(20.0).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     icon_tile(ui, Icon::Route, MINT, 42.0);
                     ui.vertical(|ui| { ui.label(RichText::new(&tunnel.name).strong()); ui.label(RichText::new(format!("{} · 127.0.0.1:{} · {}", tunnel.kind.label(), tunnel.bind_port, host.as_ref().map(|host| host.name.as_str()).unwrap_or("Host removido"))).size(12.0).color(MUTED)); });
@@ -1295,7 +1251,7 @@ impl OpenSshApp {
         for snippet in self.workspace.snippets.clone() {
             egui::Frame::new()
                 .fill(CARD)
-                .corner_radius(12)
+                .corner_radius(18)
                 .inner_margin(20.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -1447,103 +1403,167 @@ impl OpenSshApp {
             .default_width(480.0)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                field(ui, "Nome", &mut host.name);
-                field(ui, "Endereço (hostname ou IP)", &mut host.address);
-                ui.columns(2, |columns| {
-                    field(&mut columns[0], "Usuário", &mut host.username);
-                    columns[1].label(RichText::new("Porta").color(MUTED).size(12.0));
-                    columns[1].add(egui::DragValue::new(&mut host.port).range(1..=65535));
-                });
-                ui.horizontal(|ui| {
-                    let old = host.protocol;
-                    egui::ComboBox::from_id_salt("host-protocol")
-                        .selected_text(host.protocol.label())
-                        .show_ui(ui, |ui| {
-                            for protocol in [Protocol::Ssh, Protocol::Sftp, Protocol::Ftp] {
-                                ui.selectable_value(&mut host.protocol, protocol, protocol.label());
-                            }
+                egui::ScrollArea::vertical()
+                    .id_salt("host-form-scroll")
+                    .max_height((ctx.screen_rect().height() - 140.0).max(300.0))
+                    .show(ui, |ui| {
+                        field(ui, "Nome", &mut host.name);
+                        field(ui, "Endereço (hostname ou IP)", &mut host.address);
+                        ui.columns(2, |columns| {
+                            field(&mut columns[0], "Usuário", &mut host.username);
+                            columns[1].label(RichText::new("Porta").color(MUTED).size(12.0));
+                            columns[1].add(egui::DragValue::new(&mut host.port).range(1..=65535));
                         });
-                    if old != host.protocol {
-                        host.port = host.protocol.default_port();
-                    }
-                    ui.checkbox(&mut host.favorite, "Favorito");
-                });
-                field(ui, "Grupo", &mut host.group);
-                field(ui, "Tags (separadas por vírgula)", &mut self.host_tags);
-                egui::ComboBox::from_id_salt("host-identity")
-                    .width(350.0)
-                    .selected_text(
-                        host.identity_id
-                            .as_ref()
-                            .and_then(|id| {
+                        ui.horizontal(|ui| {
+                            let old = host.protocol;
+                            egui::ComboBox::from_id_salt("host-protocol")
+                                .selected_text(host.protocol.label())
+                                .show_ui(ui, |ui| {
+                                    for protocol in [Protocol::Ssh, Protocol::Sftp, Protocol::Ftp] {
+                                        ui.selectable_value(
+                                            &mut host.protocol,
+                                            protocol,
+                                            protocol.label(),
+                                        );
+                                    }
+                                });
+                            if old != host.protocol {
+                                host.port = host.protocol.default_port();
+                            }
+                            ui.checkbox(&mut host.favorite, "Favorito");
+                        });
+                        field(ui, "Grupo", &mut host.group);
+                        field(ui, "Tags (separadas por vírgula)", &mut self.host_tags);
+                        if host.protocol != Protocol::Ftp {
+                            ui.add_space(6.0);
+                            ui.label(RichText::new("Identidade SSH").color(MUTED).size(12.0));
+                            egui::ComboBox::from_id_salt("host-identity")
+                                .width(450.0)
+                                .selected_text(
+                                    host.identity_id
+                                        .as_ref()
+                                        .and_then(|id| {
+                                            self.workspace
+                                                .identities
+                                                .iter()
+                                                .find(|identity| &identity.id == id)
+                                        })
+                                        .map(|identity| {
+                                            format!(
+                                                "{} · {}",
+                                                identity.name,
+                                                identity.algorithm_label()
+                                            )
+                                        })
+                                        .unwrap_or_else(|| {
+                                            "SSH Agent / autenticação interativa".into()
+                                        }),
+                                )
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut host.identity_id,
+                                        None,
+                                        "SSH Agent / autenticação interativa",
+                                    );
+                                    for identity in &self.workspace.identities {
+                                        ui.selectable_value(
+                                            &mut host.identity_id,
+                                            Some(identity.id.clone()),
+                                            format!(
+                                                "{} · {}",
+                                                identity.name,
+                                                identity.algorithm_label()
+                                            ),
+                                        );
+                                    }
+                                });
+                            let selected_key = host.identity_id.as_ref().and_then(|id| {
                                 self.workspace
                                     .identities
                                     .iter()
                                     .find(|identity| &identity.id == id)
-                            })
-                            .map(|identity| identity.name.as_str())
-                            .unwrap_or("SSH Agent / autenticação interativa"),
-                    )
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut host.identity_id,
-                            None,
-                            "SSH Agent / autenticação interativa",
-                        );
-                        for identity in &self.workspace.identities {
-                            ui.selectable_value(
-                                &mut host.identity_id,
-                                Some(identity.id.clone()),
-                                &identity.name,
+                            });
+                            if let Some(identity) = selected_key {
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&identity.fingerprint)
+                                            .monospace()
+                                            .size(10.5)
+                                            .color(MUTED),
+                                    )
+                                    .wrap(),
+                                );
+                            }
+                            if ui.button("Gerenciar chaves e vínculos").clicked() {
+                                self.key_draft = selected_key.map(|identity| {
+                                    keys::KeyDraft::existing(identity, &self.workspace)
+                                });
+                                self.query.clear();
+                                self.page = Page::Keys;
+                            }
+                        } else {
+                            host.identity_id = None;
+                            ui.label(
+                                RichText::new("FTP usa senha; identidades SSH não se aplicam.")
+                                    .color(MUTED)
+                                    .size(12.0),
                             );
                         }
+                        ui.label(
+                            RichText::new("Senha SFTP/FTP (opcional, salva no Chaves do macOS)")
+                                .color(MUTED)
+                                .size(12.0),
+                        );
+                        keys::secret_input(
+                            ui,
+                            "host-password",
+                            &mut self.host_password,
+                            false,
+                            false,
+                            "Senha de transferência",
+                        );
+                        if ui.button("Esquecer senha salva").clicked() && !self.demo {
+                            let id = host.id.clone();
+                            let sender = self.sender.clone();
+                            let context = ctx.clone();
+                            std::thread::spawn(move || {
+                                let _ = sender.send(AppEvent::Credential(
+                                    vault::delete_password(&id).map_err(|error| error.to_string()),
+                                    "Senha removida do Chaves do macOS.",
+                                ));
+                                context.request_repaint();
+                            });
+                        }
+                        field(ui, "Notas", &mut host.notes);
+                        if host.protocol == Protocol::Ftp {
+                            ui.label(
+                                RichText::new("FTP transmite dados sem criptografia.").color(AMBER),
+                            );
+                        }
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(
+                                    self.writable || self.demo,
+                                    egui::Button::new(
+                                        RichText::new("Salvar conexão").color(BG).strong(),
+                                    )
+                                    .fill(MINT),
+                                )
+                                .clicked()
+                            {
+                                save = true;
+                            }
+                            if ui.button("Cancelar").clicked() {
+                                keep = false;
+                            }
+                            if self.workspace.hosts.iter().any(|item| item.id == host.id)
+                                && ui.button(RichText::new("Excluir").color(RED)).clicked()
+                            {
+                                delete = true;
+                            }
+                        });
                     });
-                ui.label(
-                    RichText::new("Senha SFTP/FTP (opcional, salva no Chaves do macOS)")
-                        .color(MUTED)
-                        .size(12.0),
-                );
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.host_password)
-                        .password(true)
-                        .desired_width(f32::INFINITY),
-                );
-                if ui.button("Esquecer senha salva").clicked() && !self.demo {
-                    let id = host.id.clone();
-                    let sender = self.sender.clone();
-                    let context = ctx.clone();
-                    std::thread::spawn(move || {
-                        let _ = sender.send(AppEvent::Credential(
-                            vault::delete_password(&id).map_err(|error| error.to_string()),
-                        ));
-                        context.request_repaint();
-                    });
-                }
-                field(ui, "Notas", &mut host.notes);
-                if host.protocol == Protocol::Ftp {
-                    ui.label(RichText::new("FTP transmite dados sem criptografia.").color(AMBER));
-                }
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            self.writable || self.demo,
-                            egui::Button::new(RichText::new("Salvar conexão").color(BG).strong())
-                                .fill(MINT),
-                        )
-                        .clicked()
-                    {
-                        save = true;
-                    }
-                    if ui.button("Cancelar").clicked() {
-                        keep = false;
-                    }
-                    if self.workspace.hosts.iter().any(|item| item.id == host.id)
-                        && ui.button(RichText::new("Excluir").color(RED)).clicked()
-                    {
-                        delete = true;
-                    }
-                });
             });
         if save {
             host.tags = self
@@ -1553,7 +1573,20 @@ impl OpenSshApp {
                 .filter(|tag| !tag.is_empty())
                 .map(String::from)
                 .collect();
-            match host.validate() {
+            let validation = host.validate().and_then(|()| {
+                if host.identity_id.as_ref().is_some_and(|id| {
+                    !self
+                        .workspace
+                        .identities
+                        .iter()
+                        .any(|identity| &identity.id == id)
+                }) {
+                    Err("A identidade foi removida. Escolha outra chave ou SSH Agent.".into())
+                } else {
+                    Ok(())
+                }
+            });
+            match validation {
                 Ok(()) => {
                     if host.group.trim().is_empty() {
                         host.group = "Pessoal".into();
@@ -1584,7 +1617,10 @@ impl OpenSshApp {
                             let result = vault::set_password(&id, &password)
                                 .map_err(|error| error.to_string());
                             password.zeroize();
-                            let _ = sender.send(AppEvent::Credential(result));
+                            let _ = sender.send(AppEvent::Credential(
+                                result,
+                                "Senha salva no Chaves do macOS.",
+                            ));
                             context.request_repaint();
                         });
                     }
@@ -1711,7 +1747,7 @@ if ui.button("Cancelar").clicked() { keep = false; } });
                 if ui.button(RichText::new("Excluir").color(RED)).clicked() {
                     match kind.as_str() {
                         "host" => { self.workspace.hosts.retain(|host| host.id != id); self.workspace.tunnels.retain(|tunnel| tunnel.host_id != id); if self.selected.as_ref() == Some(&id) { self.selected = None; } }
-                        "identity" => { self.workspace.identities.retain(|identity| identity.id != id); for host in &mut self.workspace.hosts { if host.identity_id.as_ref() == Some(&id) { host.identity_id = None; } } }
+                        "identity" => { self.key_draft = None; self.workspace.identities.retain(|identity| identity.id != id); for host in &mut self.workspace.hosts { if host.identity_id.as_ref() == Some(&id) { host.identity_id = None; } } }
                         "tunnel" => { self.workspace.tunnels.retain(|tunnel| tunnel.id != id); self.sessions.retain(|tab| tab.tunnel_id.as_ref() != Some(&id)); }
                         "snippet" => self.workspace.snippets.retain(|snippet| snippet.id != id),
                         _ => (),
@@ -1729,6 +1765,12 @@ impl eframe::App for OpenSshApp {
         self.poll();
         self.topbar(ctx);
         self.sidebar(ctx);
+        if self.page != Page::Keys {
+            self.key_draft = None;
+        }
+        if self.page == Page::Keys {
+            self.key_panel(ctx);
+        }
         if self.page == Page::Hosts && ctx.screen_rect().width() >= 1250.0 {
             self.details(ctx);
         }
@@ -1791,7 +1833,9 @@ impl eframe::App for OpenSshApp {
                 Page::Settings => self.settings(ui),
                 Page::Terminal => self.terminal(ui),
             });
-        self.host_modal(ctx);
+        if self.page != Page::Keys {
+            self.host_modal(ctx);
+        }
         self.tunnel_modal(ctx);
         self.snippet_modal(ctx);
         self.delete_modal(ctx);
@@ -1848,7 +1892,7 @@ fn primary(ui: &mut egui::Ui, text: &str) -> egui::Response {
         egui::Button::new(RichText::new(text).color(BG).strong())
             .fill(MINT)
             .stroke(Stroke::NONE)
-            .corner_radius(8),
+            .corner_radius(12),
     )
 }
 fn primary_full(ui: &mut egui::Ui, text: &str) -> egui::Response {
@@ -1857,13 +1901,13 @@ fn primary_full(ui: &mut egui::Ui, text: &str) -> egui::Response {
         egui::Button::new(RichText::new(text).color(BG).strong())
             .fill(MINT)
             .stroke(Stroke::NONE)
-            .corner_radius(8),
+            .corner_radius(12),
     )
 }
 fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
     egui::Frame::new()
         .fill(color.gamma_multiply(0.10))
-        .corner_radius(5)
+        .corner_radius(8)
         .inner_margin(egui::Margin::symmetric(7, 4))
         .show(ui, |ui| {
             ui.label(RichText::new(text).size(9.5).color(color));
@@ -1912,7 +1956,7 @@ fn empty_state(ui: &mut egui::Ui, icon: Icon, title: &str, description: &str) {
 fn icon_tile(ui: &mut egui::Ui, icon: Icon, color: Color32, size: f32) {
     egui::Frame::new()
         .fill(color.gamma_multiply(0.11))
-        .corner_radius(10)
+        .corner_radius(14)
         .inner_margin((size - 20.0) / 2.0)
         .show(ui, |ui| {
             draw_icon(ui, icon, color, 20.0);
@@ -1924,7 +1968,7 @@ fn nav_item(ui: &mut egui::Ui, icon: Icon, label: &str, selected: bool) -> bool 
     if selected || response.hovered() {
         ui.painter().rect_filled(
             rect,
-            8,
+            12,
             if selected {
                 Color32::from_rgb(29, 53, 51)
             } else {

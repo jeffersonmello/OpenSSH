@@ -13,7 +13,7 @@ A proteção local usa permissões de arquivo e Keychain. Esta alpha não preten
 | Servidor impostor | SSH com verificação normal; SFTP consulta `known_hosts` antes da autenticação | O usuário precisa conferir o fingerprint por canal confiável na primeira conexão |
 | Injeção em processos | Argumentos separados e validação de host/porta/usuário | O cliente SSH e seus parsers também fazem parte da superfície de ataque |
 | Exposição de credenciais em JSON | JSON contém referências; senhas no Keychain | Metadados do workspace não são criptografados |
-| Leitura indevida de chave local | Diretórios restritos, chave privada `0600` | Chaves geradas nesta alpha não têm passphrase; usuário local comprometido pode lê-las |
+| Leitura indevida de chave local | Diretórios restritos, chave privada `0600` | Uma chave sem passphrase depende da proteção do disco; usuário local comprometido pode acessar arquivos e memória |
 | Listener de proxy exposto | Bind explícito em `127.0.0.1` | Outros processos do mesmo computador podem acessar portas locais |
 | FTP em rede hostil | Confirmação explícita e SFTP como alternativa | FTP comum não tem confidencialidade ou integridade do transporte |
 | Sobrescrita local por download | Criação exclusiva do arquivo de destino | Falhas tentam remover o destino local parcial; interrupção abrupta do processo ainda pode deixar resíduo |
@@ -23,12 +23,20 @@ A proteção local usa permissões de arquivo e Keychain. Esta alpha não preten
 
 ## Chaves e senhas
 
-- Importação copia a chave para o diretório gerenciado; não substitui a origem. Nesta alpha, arquivos protegidos por passphrase são rejeitados. Para usá-los, carregue a chave no `ssh-agent` e deixe o host sem identidade gerenciada selecionada.
+- Importação copia a chave para o diretório gerenciado; não substitui a origem. Chaves OpenSSH protegidas são validadas com a passphrase em memória, preservando o material criptografado no arquivo gerenciado. Uma passphrase incorreta não deve substituir o cadastro existente.
 - Chaves privadas não entram em `Workspace`, histórico de atividade ou repositório.
-- O gerador usa Ed25519 e o `ssh-keygen` do sistema. Uma chave gerada sem passphrase depende da proteção de arquivo e do disco.
-- O Keychain armazena senhas de transferência por host. O terminal SSH usa seus próprios prompts e `ssh-agent`.
+- A geração usa Ed25519 por `ssh-key`/RustCrypto e aceita passphrase opcional. Uma chave criada sem passphrase depende da proteção de arquivo e do disco; importar uma chave protegida mantém essa proteção.
+- Importações limitam o arquivo a 1 MiB e o custo de chaves OpenSSH a 1024 rodadas bcrypt. PEM legado só é aceito sem proteção; formatos protegidos usam OpenSSH.
+- O Keychain armazena senhas de transferência por host e, por escolha do usuário, passphrases por identidade para SFTP. A chave privada não é guardada no Keychain. Terminal SSH e túneis usam seus próprios prompts e `ssh-agent`, sem injeção da passphrase salva.
 - Remover uma identidade do catálogo preserva seu arquivo privado. Remover um host preserva a entrada de senha no Keychain; apague a senha pelo editor antes de excluir o host quando desejar removê-la também.
 - Não se deve passar senha ou passphrase pela linha de comando nem por mensagens de erro.
+- Guardar ou limpar passphrase de uma identidade ocorre depois de salvar os metadados. Alterar apenas nome/vínculos mantém a entrada; substituir material sem guardar uma nova passphrase limpa a antiga. Falhas de Keychain são reportadas sem anunciar credencial salva.
+
+## Identidades compartilhadas
+
+Uma identidade pode atender vários hosts SSH/SFTP. Trocar seu material altera as próximas autenticações de todos os vínculos, mantendo o mesmo ID. O editor deve informar o alcance e indicar quando um host selecionado já usa outra identidade. Desvincular ou remover do catálogo não remove o arquivo privado. Hosts FTP não recebem identidade SSH.
+
+O campo privado permanece mascarado por padrão; nesse estado, não exporta o texto por copiar/recortar. Mostrar conteúdo é uma ação explícita sobre a entrada nova. O histórico de desfazer do campo é limpo, inclusive após um frame revelado, para não recuperar segredos de um rascunho anterior. A edição não carrega automaticamente o conteúdo privado já salvo. Não habilite screenshots com segredos reais para demonstrar o editor.
 
 ## Confiança no servidor
 

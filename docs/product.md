@@ -25,7 +25,7 @@ Permitir que desenvolvedores e administradores organizem o acesso a ambientes re
 ## Fluxos principais
 
 1. **Host:** criar endereço e credenciais de referência, organizar, buscar e conectar.
-2. **Identidade:** importar uma chave própria ou gerar Ed25519, conferir fingerprint e associar a um host.
+2. **Identidade:** importar chave por arquivo/texto ou gerar Ed25519, validar passphrase quando protegida, conferir chave pública/fingerprint e vincular a um ou vários hosts SSH/SFTP.
 3. **Túnel:** escolher host e tipo, informar portas, iniciar e encerrar a sessão.
 4. **Arquivo:** selecionar protocolo, autenticar, listar e transferir um arquivo.
 5. **Demonstração:** explorar o layout com dados fictícios sem persistência ou rede.

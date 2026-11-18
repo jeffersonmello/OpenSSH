@@ -45,6 +45,14 @@ O script exige macOS, Xcode Command Line Tools e um target compatível. Não com
 
 O workflow de release cria pacotes por arquitetura e os guarda como artifacts do workflow. Não publica automaticamente uma release pública. Para publicar, revise a versão, o changelog, os artifacts e os resultados de validação e use o fluxo de distribuição do mantenedor.
 
+## Capturas de demonstração
+
+```bash
+cargo run --locked -- --demo --page keys --screenshot docs/images/keys-preview.png
+```
+
+A página usa metadados fictícios e não lê material privado do usuário. Use o modo demo para revisar o editor de chaves e o arredondamento da interface sem expor segredos.
+
 ## Dados locais
 
 Não utilize seus únicos exemplares de uma chave para testar importação. Faça backup dos dados locais antes de mudanças de schema. Não exclua o diretório do aplicativo para contornar erro de leitura; preserve o arquivo para diagnóstico e recuperação.

@@ -19,7 +19,7 @@ Leia a especificação ligada à tarefa em `specs/`, e consulte `docs/architectu
 - Não desative verificação de chave de host nem aceite silenciosamente uma mudança de fingerprint.
 - Construa processos com argumentos separados. Não interpole host, usuário, porta ou caminhos em comandos de shell.
 - Senhas e chaves privadas não pertencem ao JSON, logs, screenshots, testes ou issues.
-- Chaves privadas locais exigem permissões restritas. Keychain nesta versão guarda senhas de transferência; não descreva-o como armazenamento de chaves privadas.
+- Chaves privadas locais exigem permissões restritas. Keychain guarda senhas de transferência e passphrases opcionais por identidade para SFTP; não descreva-o como armazenamento de chaves privadas. Terminal e túneis solicitam passphrases interativamente.
 - A rede deve ficar fora do frame egui. Gerencie encerramento e reaproveitamento dos recursos dos processos.
 - Túneis usam loopback. Mudanças de exposição ou forwarding de agente exigem design explícito dentro do escopo solicitado.
 - `--demo` permanece sem rede e sem persistência de dados ou segredos.

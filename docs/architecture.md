@@ -28,6 +28,7 @@ flowchart LR
 | `terminal` | PTY, parser VT100, teclado, resize e ciclo da sessão | Desativar verificação de host |
 | `transfer` | Listagem e transferência via SFTP/FTP | Confiar silenciosamente em servidor desconhecido |
 | `app` | Navegação, formulários, estado e workers | Bloquear o frame durante uma transferência |
+| `app/keys` | Grade, editor, vínculos e confirmação da persistência de identidades | Carregar conteúdo privado salvo automaticamente no editor |
 
 ## Duas implementações de transporte
 
@@ -39,11 +40,19 @@ FTP usa `suppaftp` sem TLS nesta versão. A interface exige ciência explícita 
 
 ## Persistência e segredos
 
-`Workspace` tem `schema_version: 1` e coleções de hosts, identidades, túneis e snippets. Identidades no JSON contêm caminho, chave pública e fingerprint; chaves privadas ficam em arquivos restritos. Senhas de transferência usam entradas do Keychain vinculadas ao identificador do host.
+`Workspace` tem `schema_version: 1` e coleções de hosts, identidades, túneis e snippets. Identidades no JSON contêm caminho, chave pública e fingerprint; chaves privadas ficam em arquivos restritos. Senhas de transferência usam entradas do Keychain vinculadas ao identificador do host. Passphrases de chaves OpenSSH podem ser guardadas opcionalmente em entradas por identidade para SFTP; não são injetadas no cliente SSH. `Identity.encrypted` tem padrão `false` na leitura de dados antigos. `Host.identity_id` mantém a associação e o ID de identidade é preservado ao renomear ou substituir material.
 
 `directories::ProjectDirs` resolve o diretório de dados da plataforma. O caminho efetivo é apresentado na interface e pode ser conferido em `Storage::discover`. O workspace é gravado por substituição atômica; um schema desconhecido ou JSON inválido deve produzir erro, sem substituição silenciosa.
 
 O modo `--demo` mantém dados fictícios em memória. Operações de rede e gravação de segredos ficam bloqueadas nesse modo.
+
+## Editor de identidades
+
+A UI separa dados editáveis e metadados derivados. Material privado novo é validado antes de persistir; campos públicos não são fonte de verdade para a chave. `ssh-key` gera Ed25519 com passphrase opcional e valida/descriptografa OpenSSH protegido em memória; o arquivo gerenciado preserva o conteúdo criptografado. Vínculos múltiplos continuam sendo referências nos hosts; FTP é excluído.
+
+`src/app/keys.rs` guarda o rascunho do editor separado da identidade salva. Uma identidade existente mostra um bloco de estado, sem ler sua chave privada, e exige ação explícita para substituir material. O seletor prioriza conexões já vinculadas. A seção de passphrase/SFTP fica recolhida na edição e aberta quando é necessária para um novo material.
+
+Após validar a identidade, a interface salva os metadados antes de executar `PassphraseAction` no Keychain. Renomear ou alterar vínculos mantém a credencial. Substituir material sem optar por guardar uma nova passphrase limpa a credencial antiga; falha de gravação do workspace não dispara essa limpeza. Atualizar só a passphrase valida a chave atual sem gerar outro arquivo privado. Falhas do Keychain após salvar o cadastro são apresentadas para permitir nova tentativa. Veja [SPEC-002](../specs/002-key-workspace/spec.md) e [ADR-0004](adr/0004-protected-identities.md).
 
 ## Concorrência e encerramento
 

@@ -97,6 +97,21 @@ pub struct Identity {
     pub public_key: String,
     pub fingerprint: String,
     pub algorithm: String,
+    #[serde(default)]
+    pub encrypted: bool,
+}
+impl Identity {
+    pub fn algorithm_label(&self) -> &str {
+        match self.algorithm.as_str() {
+            "ssh-ed25519" => "Ed25519",
+            "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => "RSA",
+            "ecdsa-sha2-nistp256" | "ecdsa-sha2-nistp384" | "ecdsa-sha2-nistp521" => "ECDSA",
+            "ssh-dss" => "DSA",
+            "sk-ssh-ed25519@openssh.com" => "Ed25519 SK",
+            "sk-ecdsa-sha2-nistp256@openssh.com" => "ECDSA SK",
+            other => other,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -167,6 +182,36 @@ impl Default for Workspace {
     }
 }
 impl Workspace {
+    /// Replace this identity's host selection, leaving unrelated links intact.
+    /// Validate the complete selection first so errors never partially mutate it.
+    pub fn bind_identity(&mut self, identity_id: &str, host_ids: &[String]) -> Result<(), String> {
+        if !self
+            .identities
+            .iter()
+            .any(|identity| identity.id == identity_id)
+        {
+            return Err("Identidade não encontrada.".into());
+        }
+        for id in host_ids {
+            let host = self
+                .hosts
+                .iter()
+                .find(|host| &host.id == id)
+                .ok_or_else(|| "Host não encontrado.".to_owned())?;
+            if host.protocol == Protocol::Ftp {
+                return Err("Hosts FTP não usam chaves SSH.".into());
+            }
+        }
+        for host in &mut self.hosts {
+            if host_ids.contains(&host.id) {
+                host.identity_id = Some(identity_id.to_owned());
+            } else if host.identity_id.as_deref() == Some(identity_id) {
+                host.identity_id = None;
+            }
+        }
+        Ok(())
+    }
+
     pub fn demo() -> Self {
         let mut workspace = Self::default();
         for (name, address, group, tags, favorite) in [
@@ -222,6 +267,26 @@ impl Workspace {
                 favorite,
                 ..Host::default()
             });
+        }
+        for (name, algorithm, encrypted, hosts) in [
+            ("production-deploy", "ssh-ed25519", true, vec![0, 1]),
+            ("infrastructure", "ssh-rsa", true, vec![2, 5]),
+            ("development", "ssh-ed25519", false, vec![3, 4]),
+        ] {
+            let id = new_id();
+            workspace.identities.push(Identity {
+                id: id.clone(),
+                name: name.into(),
+                path: String::new(),
+                public_key: "Demonstração — nenhuma chave privada ou pública real está cadastrada."
+                    .into(),
+                fingerprint: "SHA256:DEMO • apenas referência visual".into(),
+                algorithm: algorithm.into(),
+                encrypted,
+            });
+            for index in hosts {
+                workspace.hosts[index].identity_id = Some(id.clone());
+            }
         }
         workspace.tunnels.push(Tunnel {
             name: "Private network".into(),

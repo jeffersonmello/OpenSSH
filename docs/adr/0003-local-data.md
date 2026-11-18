@@ -14,3 +14,7 @@ Usar `Workspace` JSON com schema versionado e gravação atômica em diretório 
 ## Consequências
 
 O usuário controla os dados e backups. Metadados não são criptografados, e chaves privadas geradas sem passphrase dependem da proteção local. Schema inválido ou desconhecido deve falhar sem sobrescrever o arquivo. Sincronização e exportação protegida exigirão design próprio.
+
+## Evolução
+
+[ADR-0004](0004-protected-identities.md) acrescenta passphrases opcionais por identidade no Keychain para SFTP e metadados de proteção com leitura compatível. A chave privada continua em arquivo local restrito.

@@ -1,6 +1,6 @@
 # Especificações
 
-Cada mudança de comportamento liga requisitos, decisão de implementação e validação. A especificação inicial é [001-native-workspace](001-native-workspace/spec.md).
+Cada mudança de comportamento liga requisitos, decisão de implementação e validação. A especificação inicial é [001-native-workspace](001-native-workspace/spec.md). A evolução do editor de chaves está em [002-key-workspace](002-key-workspace/spec.md).
 
 Use [templates/feature.md](templates/feature.md) para uma nova demanda. Os arquivos têm papéis distintos:
 

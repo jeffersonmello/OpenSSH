@@ -6,6 +6,10 @@ use std::path::PathBuf;
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let demo = args.iter().any(|arg| arg == "--demo");
+    let page = args
+        .windows(2)
+        .find(|pair| pair[0] == "--page")
+        .map(|pair| pair[1].clone());
     let screenshot = args
         .windows(2)
         .find(|pair| pair[0] == "--screenshot")
@@ -13,6 +17,12 @@ fn main() -> eframe::Result<()> {
     if screenshot.is_some() && !demo {
         eprintln!("--screenshot requires --demo to keep captures free of user data");
         std::process::exit(2);
+    }
+    if let Some(page) = &page {
+        if !demo || !matches!(page.as_str(), "keys" | "hosts") {
+            eprintln!("--page requires --demo and accepts keys or hosts");
+            std::process::exit(2);
+        }
     }
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("OpenSSH Manager")
@@ -32,6 +42,12 @@ fn main() -> eframe::Result<()> {
             viewport,
             ..Default::default()
         },
-        Box::new(move |cc| Ok(Box::new(app::OpenSshApp::new(cc, demo, screenshot)))),
+        Box::new(move |cc| {
+            let mut application = app::OpenSshApp::new(cc, demo, screenshot);
+            if let Some(page) = page {
+                application.set_demo_page(&page);
+            }
+            Ok(Box::new(application))
+        }),
     )
 }

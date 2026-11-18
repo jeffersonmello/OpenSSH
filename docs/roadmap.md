@@ -5,6 +5,8 @@ O roadmap expressa prioridades, sem promessa de data. O status detalhado da entr
 ## 0.1 — Fundação macOS
 
 - Workspace local, organização de hosts e identidades.
+- Editor lateral de chaves, importação por arquivo/texto e vínculos compartilhados com SSH/SFTP.
+- Geração Ed25519 com passphrase opcional, importação de OpenSSH protegido e passphrase opcional no Keychain para SFTP.
 - Terminal SSH integrado e ciclo de vida das sessões.
 - Túneis SOCKS5, locais e remotos.
 - Transferência básica de arquivos por SFTP e FTP.
@@ -13,7 +15,6 @@ O roadmap expressa prioridades, sem promessa de data. O status detalhado da entr
 ## 0.2 — Confiança e operação
 
 - Fluxo visual de verificação de fingerprints e gestão de hosts conhecidos.
-- Criação de chaves com passphrase sem segredos em argumentos.
 - Cancelamento de transferências, progresso e fila.
 - Importação de `~/.ssh/config` com confirmação de conflitos.
 - Backup e exportação protegida do workspace.

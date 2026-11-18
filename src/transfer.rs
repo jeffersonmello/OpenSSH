@@ -91,14 +91,33 @@ fn sftp_with_known_hosts(
     action: TransferAction,
     known_hosts: &Path,
 ) -> Result<Vec<RemoteEntry>> {
+    sftp_with_known_hosts_and_passphrase(host, identity, action, known_hosts, None)
+}
+
+fn sftp_with_known_hosts_and_passphrase(
+    host: &Host,
+    identity: Option<&Identity>,
+    action: TransferAction,
+    known_hosts: &Path,
+    supplied_passphrase: Option<&str>,
+) -> Result<Vec<RemoteEntry>> {
     let mut session = Session::new()?;
     session.set_tcp_stream(connect(host)?);
     session.set_timeout(TIMEOUT.as_millis() as u32);
     session.handshake().context("Falha no handshake SSH")?;
     verify_host(&session, host, known_hosts)?;
     if let Some(identity) = identity {
-        session.userauth_pubkey_file(&host.username, None, Path::new(&identity.path), None)
-            .context("Não foi possível autenticar com a chave. Para chaves protegidas, carregue a chave no ssh-agent e selecione autenticação pelo agente.")?;
+        let passphrase = if identity.encrypted {
+            Some(Zeroizing::new(match supplied_passphrase {
+                Some(passphrase) => passphrase.to_owned(),
+                None => vault::get_identity_passphrase(&identity.id)
+                    .context("Esta chave exige passphrase. Salve-a explicitamente no Keychain pelo editor de chaves ou use o ssh-agent sem selecionar uma identidade gerenciada.")?,
+            }))
+        } else {
+            None
+        };
+        session.userauth_pubkey_file(&host.username, None, Path::new(&identity.path), passphrase.as_ref().map(|value| value.as_str()))
+            .context("Não foi possível autenticar com a chave. Confira a chave pública no servidor e a passphrase salva, ou use o ssh-agent.")?;
     } else if session.userauth_agent(&host.username).is_err() {
         let password = Zeroizing::new(
             vault::get_password(&host.id)
@@ -414,8 +433,18 @@ mod tests {
         let storage = Storage::new(temp.path().join("data")).unwrap();
         let server = vault::generate_key(&storage, "ephemeral server").unwrap();
         let client = vault::generate_key(&storage, "ephemeral client").unwrap();
+        let protected = vault::generate_key_with_passphrase(
+            &storage,
+            "ephemeral protected client",
+            Some("ephemeral sftp fixture phrase"),
+        )
+        .unwrap();
         let authorized = temp.path().join("authorized_keys");
-        fs::write(&authorized, &client.public_key).unwrap();
+        fs::write(
+            &authorized,
+            format!("{}\n{}\n", client.public_key, protected.public_key),
+        )
+        .unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
@@ -483,6 +512,24 @@ mod tests {
             format!("[127.0.0.1]:{port} {}\n", server.public_key),
         )
         .unwrap();
+        let protected_entries = sftp_with_known_hosts_and_passphrase(
+            &host,
+            Some(&protected),
+            list_action(),
+            &known,
+            Some("ephemeral sftp fixture phrase"),
+        )
+        .unwrap();
+        assert!(!protected_entries.is_empty());
+        let bad_passphrase = sftp_with_known_hosts_and_passphrase(
+            &host,
+            Some(&protected),
+            list_action(),
+            &known,
+            Some("wrong fixture phrase"),
+        )
+        .unwrap_err();
+        assert!(!format!("{bad_passphrase:#}").contains("fixture phrase"));
         let local = temp.path().join("upload.txt");
         fs::write(&local, b"SFTP fixture content").unwrap();
         let remote = temp

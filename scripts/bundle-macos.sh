@@ -32,7 +32,9 @@ fi
 
 APP="dist/OpenSSH Manager.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY" "$APP/Contents/MacOS/openssh-manager"
+# Replace the inode instead of truncating an executable mapped by an open app.
+cp "$BINARY" "$APP/Contents/MacOS/openssh-manager.next"
+mv -f "$APP/Contents/MacOS/openssh-manager.next" "$APP/Contents/MacOS/openssh-manager"
 cp LICENSE "$APP/Contents/Resources/LICENSE"
 
 ICONSET="dist/OpenSSH.iconset"
