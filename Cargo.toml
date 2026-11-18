@@ -23,7 +23,7 @@ sha2 = "0.10"
 base64 = "0.22"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 ssh-key = { version = "0.6.7", features = ["encryption", "ed25519", "rsa", "getrandom"] }
-suppaftp = { version = "6.3", default-features = false }
+suppaftp = { version = "12.2", default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
 vt100 = "0.15"
 zeroize = "1"
