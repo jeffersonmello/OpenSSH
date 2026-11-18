@@ -1,0 +1,23 @@
+# Rust
+/target/
+/dist/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local runtime and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+workspace.json
+
+# Local screenshots and temporary output
+/tmp/

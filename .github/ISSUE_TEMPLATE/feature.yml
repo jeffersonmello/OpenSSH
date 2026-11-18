@@ -1,0 +1,28 @@
+name: Propor funcionalidade
+description: Descreva o problema e os critérios de aceite.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Quem precisa disso e em qual situação?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Comportamento desejado
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critérios de aceite
+      description: Resultados observáveis para considerar a demanda concluída.
+    validations:
+      required: true
+  - type: textarea
+    id: considerations
+    attributes:
+      label: Alternativas, dados e impacto de segurança

@@ -1,0 +1,40 @@
+name: Package macOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Check
+        run: ./scripts/check.sh
+      - name: Bundle application
+        run: ./scripts/bundle-macos.sh "${{ matrix.target }}"
+      - name: Archive
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/OpenSSH Manager.app" "dist/openssh-manager-${{ matrix.target }}.zip"
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: openssh-manager-${{ matrix.target }}
+          path: dist/openssh-manager-${{ matrix.target }}.zip

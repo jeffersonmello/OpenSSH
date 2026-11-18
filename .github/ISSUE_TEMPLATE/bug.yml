@@ -1,0 +1,37 @@
+name: Relatar bug
+description: Informe um problema reproduzível no aplicativo.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Use dados fictícios. Nunca inclua chaves privadas, senhas ou endereços sensíveis. Vulnerabilidades seguem SECURITY.md."
+  - type: input
+    id: version
+    attributes:
+      label: Versão ou commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Ambiente
+      description: Versão do macOS, arquitetura e método de instalação.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Passos para reproduzir
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado e resultado observado
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidências sanitizadas
+      description: Logs e imagens sem segredos ou dados de produção.
